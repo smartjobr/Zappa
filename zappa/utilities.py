@@ -369,6 +369,24 @@ def get_event_source(event_source, lambda_arn, target_function, boto_session, dr
     ctx = PseudoContext()
     ctx.session = boto_session
 
+    # if the event source region differs from the session region, change the session region
+    # for whatever reason the arn in some tests looks like "s3:s3:s3:s3", so we need to check if it is in LAMBDA_REGIONS
+    from .core import LAMBDA_REGIONS
+    import boto3
+    event_source_region = arn.split(':')[3]
+    if event_source_region != boto_session.region_name and event_source_region in LAMBDA_REGIONS:
+        # Credentials are refreshable, so accessing your access key / secret key separately can
+        # lead to a race condition. Use 'get_frozen_credentials' to get an actual matched set.
+        # source: https://stackoverflow.com/questions/36287720/boto3-get-credentials-dynamically#36291428
+        credentials = boto_session.get_credentials().get_frozen_credentials()
+        ctx.session = boto3.session.Session(
+            aws_access_key_id=credentials.access_key,
+            aws_secret_access_key=credentials.secret_key,
+            aws_session_token=credentials.token,
+            profile_name=boto_session.profile_name,
+            region_name=event_source_region
+        )
+
     funk = PseudoFunction()
     funk.name = lambda_arn
 
